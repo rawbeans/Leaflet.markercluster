@@ -13,6 +13,10 @@ L.MarkerClusterGroup = L.FeatureGroup.extend({
 		zoomToBoundsOnClick: true,
 		singleMarkerMode: false,
 
+		// callback to determine if should spiderfy vs cluster
+		shouldSpiderfy: null,
+		unspiderfyOnMapClick: true,
+
 		disableClusteringAtZoom: null,
 
 		// Setting this to false prevents the removal of any clusters outside of the viewpoint, which
@@ -528,6 +532,9 @@ L.MarkerClusterGroup = L.FeatureGroup.extend({
 		l = this._needsClustering;
 		this._needsClustering = [];
 		this.addLayers(l);
+
+		this._topClusterLevel._recursivelySpiderfy(this._map._zoom, this._currentShownBounds, this.options.shouldSpiderfy);
+
 	},
 
 	//Overrides FeatureGroup.onRemove
@@ -776,6 +783,9 @@ L.MarkerClusterGroup = L.FeatureGroup.extend({
 
 		this._zoom = this._map._zoom;
 		this._currentShownBounds = this._getExpandedVisibleBounds();
+
+		this._topClusterLevel._recursivelySpiderfy(this._map._zoom, this._currentShownBounds, this.options.shouldSpiderfy);
+
 	},
 
 	_moveEnd: function () {

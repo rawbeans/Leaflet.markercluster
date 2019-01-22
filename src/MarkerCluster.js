@@ -299,6 +299,19 @@ L.MarkerCluster = L.Marker.extend({
 		);
 	},
 
+	_recursivelySpiderfy: function (zoomLevel, bounds, shouldSpiderfy) {
+		this._recursively(bounds, -1, zoomLevel,
+			function (c) {
+				c._noanimationUnspiderfy();
+			},
+			function (c) {
+				if (shouldSpiderfy && shouldSpiderfy(c, zoomLevel)) {
+					c.spiderfy();
+				}
+			}
+		);
+	},
+
 	_recursivelyRestoreChildPositions: function (zoomLevel) {
 		//Fix positions of child markers
 		for (var i = this._markers.length - 1; i >= 0; i--) {

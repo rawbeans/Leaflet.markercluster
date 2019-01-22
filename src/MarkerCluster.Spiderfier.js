@@ -15,7 +15,7 @@ L.MarkerCluster.include({
 								// 0 -> always spiral; Infinity -> always circle
 
 	spiderfy: function () {
-		if (this._group._spiderfied === this || this._group._inZoomAnimation) {
+		if (this._group._isSpiderfied(this)) { // || this._group._inZoomAnimation) {
 			return;
 		}
 
@@ -25,8 +25,8 @@ L.MarkerCluster.include({
 			center = map.latLngToLayerPoint(this._latlng),
 			positions;
 
-		this._group._unspiderfy();
-		this._group._spiderfied = this;
+
+		this._group._addSpiderfied(this);
 
 		//TODO Maybe: childMarkers order by distance to center
 
@@ -42,12 +42,8 @@ L.MarkerCluster.include({
 
 	unspiderfy: function (zoomDetails) {
 		/// <param Name="zoomDetails">Argument from zoomanim if being called in a zoom animation or null otherwise</param>
-		if (this._group._inZoomAnimation) {
-			return;
-		}
 		this._animationUnspiderfy(zoomDetails);
-
-		this._group._spiderfied = null;
+		this._group._removeSpiderfied(this);
 	},
 
 	_generatePointsCircle: function (count, centerPt) {
@@ -118,7 +114,7 @@ L.MarkerCluster.include({
 			cluster: this,
 			markers: childMarkers
 		});
-		group._spiderfied = null;
+		group._removeSpiderfied(this);
 	}
 });
 
@@ -167,6 +163,40 @@ L.MarkerClusterNonAnimated = L.MarkerCluster.extend({
 L.MarkerCluster.include({
 
 	_animationSpiderfy: function (childMarkers, positions) {
+		var group = this._group,
+			map = group._map,
+			fg = group._featureGroup,
+			legOptions = this._group.options.spiderLegPolylineOptions,
+			i, m, leg, newPos;
+
+		// Traverse in ascending order to make sure that inner circleMarkers are on top of further legs. Normal markers are re-ordered by newPosition.
+		// The reverse order trick no longer improves performance on modern browsers.
+		for (i = 0; i < childMarkers.length; i++) {
+			newPos = map.layerPointToLatLng(positions[i]);
+			m = childMarkers[i];
+
+			// Add the leg before the marker, so that in case the latter is a circleMarker, the leg is behind it.
+			leg = new L.Polyline([this._latlng, newPos], legOptions);
+			map.addLayer(leg);
+			m._spiderLeg = leg;
+
+			// Now add the marker.
+			m._preSpiderfyLatlng = m._latlng;
+			m.setLatLng(newPos);
+			if (m.setZIndexOffset) {
+				m.setZIndexOffset(1000000); //Make these appear on top of EVERYTHING
+			}
+
+			fg.addLayer(m);
+		}
+		this.setOpacity(0.3);
+		group.fire('spiderfied', {
+			cluster: this,
+			markers: childMarkers
+		});
+	},
+
+	_animationSpiderfyOld: function (childMarkers, positions) {
 		var me = this,
 			group = this._group,
 			map = group._map,
@@ -360,17 +390,31 @@ L.MarkerCluster.include({
 
 
 L.MarkerClusterGroup.include({
-	//The MarkerCluster currently spiderfied (if any)
-	_spiderfied: null,
+	// The MarkerCluster(s) currently spiderfied
+	_spiderfied: {},
+
+	_isSpiderfied: function (marker) {
+		return this._spiderfied[marker._leaflet_id];
+	},
+
+	_addSpiderfied: function (marker) {
+		this._spiderfied[marker._leaflet_id] = marker;
+	},
+
+	_removeSpiderfied: function (marker) {
+		delete this._spiderfied[marker._leaflet_id];
+	},
 
 	_spiderfierOnAdd: function () {
-		this._map.on('click', this._unspiderfyWrapper, this);
-
-		if (this._map.options.zoomAnimation) {
-			this._map.on('zoomstart', this._unspiderfyZoomStart, this);
+		if (this.options.unspiderfyOnMapClick) {
+			this._map.on('click', this._unspiderfyWrapper, this);
 		}
+
+		//if (this._map.options.zoomAnimation) {
+		//	this._map.on('zoomstart', this._unspiderfyZoomStart, this);
+		//}
 		//Browsers without zoomAnimation or a big zoom don't fire zoomstart
-		this._map.on('zoomend', this._noanimationUnspiderfy, this);
+		//this._map.on('zoomend', this._noanimationUnspiderfy, this);
 	},
 
 	_spiderfierOnRemove: function () {
@@ -394,14 +438,13 @@ L.MarkerClusterGroup.include({
 		this._map.on('zoomanim', this._unspiderfyZoomAnim, this);
 	},
 
-	_unspiderfyZoomAnim: function (zoomDetails) {
+	_unspiderfyZoomAnim: function () {
 		//Wait until the first zoomanim after the user has finished touch-zooming before running the animation
 		if (L.DomUtil.hasClass(this._map._mapPane, 'leaflet-touching')) {
 			return;
 		}
 
 		this._map.off('zoomanim', this._unspiderfyZoomAnim, this);
-		this._unspiderfy(zoomDetails);
 	},
 
 	_unspiderfyWrapper: function () {
@@ -410,14 +453,18 @@ L.MarkerClusterGroup.include({
 	},
 
 	_unspiderfy: function (zoomDetails) {
-		if (this._spiderfied) {
-			this._spiderfied.unspiderfy(zoomDetails);
+		for (var mKey in this._spiderfied) {
+			if (this._spiderfied.hasOwnProperty(mKey)) {
+				this._spiderfied[mKey].unspiderfy(zoomDetails);
+			}
 		}
 	},
 
 	_noanimationUnspiderfy: function () {
-		if (this._spiderfied) {
-			this._spiderfied._noanimationUnspiderfy();
+		for (var mKey in this._spiderfied) {
+			if (this._spiderfied.hasOwnProperty(mKey)) {
+				this._spiderfied[mKey]._noanimationUnspiderfy();
+			}
 		}
 	},
 
